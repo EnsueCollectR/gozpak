@@ -1,4 +1,4 @@
-# gozpak recipe format (26.11, single-file TOML) — v1.1
+# gozpak recipe format (26.11, single-file TOML) — v1.2
 
 Supersedes the kiss-style 3-file recipe (`build` + `version` + `depends` + `sources`).
 v1.1 folds in the review pass (2026-11-17): version constraints + epoch + vercmp,
@@ -104,19 +104,39 @@ above apply to this ordering.
 ## Binary packages (.gpkg)
 
 ```
-gozjaro-<name>-<epoch?>-<version>-<release>.gpkg     # tar.zst
+<name>-<epoch?>:<version>-<release>.gpkg      # tar.zst, pacman-style name
 ├── manifest.toml        # serialized [package] + [install] + arch +
 │                        # sha256(rootfs), file list, repo, built-by
 └── rootfs/              # staged install tree
 ```
 
+- Filename is pacman-style: `openssl-3.5.1-1.gpkg`, with epoch `libfoo-1:2.0-1.gpkg`
+  (the `epoch:` token only when epoch > 0). The `:` makes epoch unambiguous;
+  package names keep their dashes — **the filename is NEVER parsed back;
+  the index / manifest.toml are the source of truth** (a name with dashes
+  would make any split-on-dash parser lie).
 - `.gpkg` is **tar.zst** (fast extract, smaller). Consequence: `zstd` + libzstd
   enter the 26.11 base system; the repo crate may use the `zstd` crate (M2 only).
-- Signing (M2): `index.json.sig` (ed25519, public key embedded in gozpak) is
-  MANDATORY; per-package `.gpkg.sig` is optional, off by default.
-- The repo index (`repo.index`) stays the current text format for M2;
-  each line: `name version release epoch arch sha256 url`
-  (see contrib/gozpak-repo-index).
+
+## Repository indexes
+
+Two indexes, same fields, different containers:
+
+1. **Source recipe repo** (`gozjaro-pkgs`): text `repo.index` (existing
+   contrib/gozpak-repo-index format), line extended to:
+   `name version release epoch arch sha256 url depends provides conflicts`
+   — dependency lists space-free, multiple entries joined with `|`
+   (constraint syntax contains no spaces). Empty list = `-`.
+2. **Binary repo** (GitHub Releases, #94): `index.json` + `index.json.sig`
+   (ed25519, pubkey embedded in gozpak — MANDATORY; per-package
+   `.gpkg.sig` optional, off by default).
+   One JSON object per package:
+   `{ name, version, release, epoch, arch, sha256, size, url,
+     depends[], provides[], conflicts[], replaces[] }`.
+
+Rule: **the index carries the solver's input** (depends/provides/conflicts
+above). The dependency solver MUST NOT need to download .gpkg manifests to
+solve — manifests are read at install time only.
 
 ## Legacy (kiss 3-file) — read-only until M3
 
