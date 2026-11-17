@@ -1,11 +1,12 @@
-# gozpak recipe format (26.11, single-file TOML)
+# gozpak recipe format (26.11, single-file TOML) — v1.1
 
 Supersedes the kiss-style 3-file recipe (`build` + `version` + `depends` + `sources`).
-The old format is still readable (`Recipe::load_legacy`) until the migration tool
-ships in M3; new recipes MUST use this format.
+v1.1 folds in the review pass (2026-11-17): version constraints + epoch + vercmp,
+multi-file sources, hook safety, config backup, raw-shell semantics.
+Legacy 3-file remains readable (`Recipe::load_legacy`) until the M3 migration tool.
 
 A recipe is a directory containing one `recipe.toml` (TOML 1.0) plus optional
-`patches/` and other local source files.
+`patches/` and local source files.
 
 ## Schema
 
@@ -14,83 +15,118 @@ A recipe is a directory containing one `recipe.toml` (TOML 1.0) plus optional
 name     = "openssl"            # required, [a-z0-9-]+
 version  = "3.5.1"             # required
 release  = 1                   # required, bump when the recipe itself changes
-arch     = "any"               # "x86_64" | "any" (default "any")
-desc     = "..."               # one-line description
+epoch    = 0                   # optional; raises precedence when upstream changes
+                                 # versioning schemes (e.g. 1.x -> 0.9); compared FIRST
+arch     = "x86_64"            # default. "any" ONLY for arch-independent packages
+                                 # (data, docs, wallpapers) — must be written explicitly
+desc     = "..."
 license  = "Apache-2.0"
 url      = "https://www.openssl.org/"
-depends        = ["zlib"]      # runtime deps (plain names)
-build_depends  = ["cmake", "make"]
+# dependency-solver fields. Constraint syntax is pacman-style:
+#   "name"          satisfies any version
+#   "zlib>=1.3"    op in { =, <, >, <=, >= }
+depends        = ["zlib>=1.3", "pcre2"]
+build_depends  = ["cmake>=3.16", "make"]
+provides       = []            # virtual packages, same syntax ("libssl=3")
+conflicts      = []            # "name" or "name<ver"
+replaces       = []            # "name" — this package supersedes it
 
 [source]
-url    = "https://www.openssl.org/source/openssl-$VERSION.tar.xz"
-sha256 = "..."                # recommended
-# git sources:
-# url = "git+https://github.com/user/repo#v1.0"
+# multiple files: array of { url, sha256 }; sha256 REQUIRED for non-git sources
+urls = [
+    { url = "https://www.openssl.org/source/openssl-$VERSION.tar.xz",
+      sha256 = "..." },
+]
+# OR a git source — pinned ref is MANDATORY (commit hash or tag, no branches):
+# git = "git+https://github.com/org/repo#d41d8cd9"
 patches = ["patches/fix-build.patch"]   # applied in order, relative to recipe dir
 
 [build]
 system = "autotools"          # "raw" | "autotools" | "meson" | "cmake" | "make"
-# system = "raw": the shell script lines run in order ($DESTDIR = $1, $VERSION exported):
+# system = "raw": steps is ONE shell script — a single `sh -eu` process,
+#   working dir = unpacked source tree. cd/export/variables PERSIST across
+#   lines. (Matches how legacy `build` files were sourced, so M3 migration
+#   is mechanical: the whole script moves into steps verbatim.)
 steps = [
     "./configure --prefix=/usr --shared",
     "make -j$JOBS",
     "make DESTDIR=$DESTDIR install",
 ]
-# system = "meson"/"cmake"/"autotools"/"make": the builder drives the standard flow;
-# extra flags:
-meson_args = ["-Dssl=true", "-Dtests=false"]
-cmake_args = ["-DCMAKE_INSTALL_PREFIX=/usr"]
+# system = "meson"/"cmake"/"autotools"/"make": builder drives the standard flow:
+meson_args     = ["-Dssl=true", "-Dtests=false"]
+cmake_args     = ["-DCMAKE_INSTALL_PREFIX=/usr"]
 configure_args = ["--prefix=/usr"]
-make_target = "install"
+make_target    = "install"
 
 [install]
-# post-install hooks: registry names or shell strings.
-# registry: ldconfig, update-mime-database, gdk-pixbuf-query-loaders,
+# post-install hooks: REGISTRY NAMES ONLY, no free-form shell.
+# Registry: ldconfig, update-mime-database, gdk-pixbuf-query-loaders,
 #           desktop-database, fontconfig, shared-mime-info
-post = ["ldconfig", "update-mime-database /usr/share/mime"]
-files = "auto"                # track installed file list for the pkg db
+# Each hook runs ONCE per transaction (install 50 libs -> ldconfig runs once).
+# Optional path filter so a hook only fires when relevant files land:
+post = [
+    "ldconfig",
+    { hook = "update-mime-database", match = "/usr/share/mime/**" },
+]
+files  = "auto"
+backup = ["etc/sysctl.conf"]   # user-modified configs: on upgrade the packaged
+                                 # copy becomes <file>.pkgnew, the live file is
+                                 # kept, and the CLI warns
 
-[meta]                        # all optional, free-form
+[meta]                        # optional, free-form
 maintainer = "..."
-repo = "main"                 # repo channel
+repo = "main"
 notes = "..."
 ```
 
 ## Variable substitution
 
-Available in `[source].url`, `sha256`, and `[build].*`:
+In `[source].urls[].url`/`sha256` and `[build].*`:
 
 | Variable | Value |
 |----------|-------|
-| `$VERSION`  | full version string |
+| `$VERSION`  | full version |
 | `$RELEASE`  | release number |
 | `$MAJOR`/`$MINOR`/`$PATCH` | version components |
+| `$EPOCH`    | epoch |
 | `$PACKAGE`  | package name |
-| `$DESTDIR`  | staging dir (build/install phase only) |
-| `$JOBS`     | parallelism (build phase only) |
+| `$DESTDIR`  | staging dir (build/install phase) |
+| `$JOBS`     | parallelism (build phase) |
+
+## Version comparison
+
+Pacman `vercmp` semantics, three keys compared in order:
+`epoch` (numeric) → `version` (numeric chunks; release tags rc/a/b/alpha sort
+BELOW the final release, e.g. `3.5.1rc1 < 3.5.1`) → `release` (numeric).
+The solver and the index both use this comparator; the constraint operators
+above apply to this ordering.
 
 ## Binary packages (.gpkg)
 
-`gozpak build`/`repo-build` packages a recipe into:
-
 ```
-gozjaro-<name>-<version>-<release>.gpkg     # tar.gz
-├── manifest.toml        # serialized recipe [package] + [install].post +
-│                       # arch, sha256(rootfs), file count/manifest, repo, built-by
-└── rootfs/              # staged install tree (files under $DESTDIR)
+gozjaro-<name>-<epoch?>-<version>-<release>.gpkg     # tar.zst
+├── manifest.toml        # serialized [package] + [install] + arch +
+│                        # sha256(rootfs), file list, repo, built-by
+└── rootfs/              # staged install tree
 ```
 
-The repo index (`repo.index`) stays the current text format for M2; each line carries
-`name version release arch sha256 url` (see contrib/gozpak-repo-index). The index and
-manifest share the TOML/line families so one parser covers both.
+- `.gpkg` is **tar.zst** (fast extract, smaller). Consequence: `zstd` + libzstd
+  enter the 26.11 base system; the repo crate may use the `zstd` crate (M2 only).
+- Signing (M2): `index.json.sig` (ed25519, public key embedded in gozpak) is
+  MANDATORY; per-package `.gpkg.sig` is optional, off by default.
+- The repo index (`repo.index`) stays the current text format for M2;
+  each line: `name version release epoch arch sha256 url`
+  (see contrib/gozpak-repo-index).
 
 ## Legacy (kiss 3-file) — read-only until M3
 
 `build` (sh, `$1`=DESTDIR, `$2`=version), `version` (`<ver> <rel>`),
-`depends` (one per line, trailing ` make` = build-only), `sources` (URLs + `git+`),
-`meta` (key=value). `Recipe::load` prefers `recipe.toml`; a legacy dir is loaded
-with `RecipeKind::Legacy` and the CLI prints a one-line legacy warning.
+`depends` (one per line, trailing ` make` = build-only), `sources` (URLs +
+`git+`), `meta` (key=value). `Recipe::load` prefers `recipe.toml`; a legacy
+dir loads as `RecipeKind::Legacy` and the CLI prints a one-line legacy warning.
 
-Migration: `gozpak migrate <dir>` (M3) rewrites legacy → recipe.toml;
-`build` file content maps to `[build] system="raw"` `steps`, the ` make`
-suffix in `depends` splits into `build_depends`.
+Migration `gozpak migrate` (M3): `build` script → `[build] system="raw"` steps
+(verbatim, single-shell semantics preserved); ` make` suffix in `depends`
+splits into `build_depends`; `sources` URLs → `[source].urls` with sha256
+computed from the fetched files; `git+` requires a pinned ref (branch → tag
+resolution, else FAIL with a hint).
