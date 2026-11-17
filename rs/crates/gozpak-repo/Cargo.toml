@@ -1,0 +1,16 @@
+[package]
+name = "gozpak-repo"
+description = "gozpak (Rust rewrite, M1): repo.index parse/serialize + repo URL configuration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# TSV repo.index is plain (std string handling), but the v1.2 binary-repo
+# index (index.json) needs serde_json; serde/derive is confined to this
+# crate for the BinaryEntry schema.
+[dependencies]
+gozpak-core = { path = "../gozpak-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

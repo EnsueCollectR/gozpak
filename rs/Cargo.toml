@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gozpak-core",
+    "crates/gozpak-recipe",
+    "crates/gozpak-repo",
+    "crates/gozpak-cli",
+]
+
+[workspace.package]
+# Kept in parity with the shell gozpak (v6.0.0): `gozpak version` prints this.
+version = "6.0.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+
+[profile.release]
+lto = "thin"

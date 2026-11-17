@@ -1,0 +1,13 @@
+[package]
+name = "gozpak-core"
+description = "gozpak (Rust rewrite, M1): shared types — version, package, installed DB, paths, SHA-256"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# Intentionally zero external dependencies (the shell version shells out to
+# openssl/sha256sum for hashing; here we carry a verified FIPS 180-4
+# implementation instead, see src/sha256.rs).
+[dependencies]

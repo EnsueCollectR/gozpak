@@ -1,0 +1,6 @@
+--- a/crypto/ssl/ssl3.c
++++ b/crypto/ssl/ssl3.c
+@@ -1,2 +1,2
+-disable SSLv3 by default
+-#define OPENSSL_NO_SSL3
++#define OPENSSL_NO_SSL3 1

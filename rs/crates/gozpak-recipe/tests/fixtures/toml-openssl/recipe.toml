@@ -1,0 +1,40 @@
+[package]
+name = "openssl"
+version = "3.5.1"
+release = 1
+epoch = 1
+arch = "x86_64"
+desc = "OpenSSL toolkit"
+license = "Apache-2.0"
+url = "https://www.openssl.org/"
+depends = ["zlib>=1.3", "pcre2"]
+build_depends = ["cmake>=3.16", "make"]
+provides = ["libssl=3"]
+conflicts = []
+replaces = []
+
+[source]
+urls = [
+    { url = "https://www.openssl.org/source/openssl-$VERSION.tar.xz", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+]
+patches = ["patches/fix-ssl3.patch"]
+
+[build]
+system = "raw"
+steps = [
+    "./Configure --prefix=/usr --shared",
+    "make -j$JOBS",
+    "make DESTDIR=$DESTDIR install",
+]
+
+[install]
+post = [
+    "ldconfig",
+    { hook = "update-mime-database", match = "/usr/share/mime/**" },
+]
+files = "auto"
+backup = ["etc/ssl/openssl.cnf"]
+
+[meta]
+maintainer = "gozjaro@example.org"
+repo = "main"

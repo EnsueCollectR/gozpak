@@ -1,0 +1,20 @@
+[package]
+name = "gozjaro-installer"
+version = "0.3.0"
+release = 1
+desc = "Gozjaro installer (Rust)"
+license = "GPL-3.0-or-later"
+# arch omitted: defaults to "x86_64" (v1.1)
+
+[source]
+git = "git+https://github.com/Gozjaro/gozjaro-installer-rs#d41d8cd9"
+
+[build]
+system = "raw"
+steps = [
+    "cargo install --path . --root $DESTDIR/usr",
+]
+
+[install]
+post = []
+files = "auto"

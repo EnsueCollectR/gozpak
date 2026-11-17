@@ -1,0 +1,3 @@
+#!/bin/sh -e
+# copy the local source tree into DESTDIR
+cp -r src "$1/usr/share/hello"

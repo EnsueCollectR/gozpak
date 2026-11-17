@@ -1,0 +1,17 @@
+[package]
+name = "gozpak-recipe"
+description = "gozpak (Rust rewrite, M1): package recipe parsing — TOML (new primary) + legacy 3-file (kiss-style)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+gozpak-core = { path = "../gozpak-core" }
+# The `toml` crate is the only external dependency in the whole workspace
+# (per the M1 design decision): it parses the new primary `recipe.toml`
+# recipe format. serde/derive is required to derive Deserialize for the
+# schema types; it is confined to this crate.
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
